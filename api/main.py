@@ -11,8 +11,13 @@ class SimplexInput(BaseModel):
     A: List[List[float]]
     b: List[float]
 
-# Função Simplex
+# Função Simplex com conversão de tipos
 def simplex(c, A, b):
+    # Certificar-se de que todos os valores estão no formato de float
+    c = np.array(c, dtype=float)
+    A = np.array(A, dtype=float)
+    b = np.array(b, dtype=float)
+
     num_variables = len(c)
     num_constraints = len(b)
 
