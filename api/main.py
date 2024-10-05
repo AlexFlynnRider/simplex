@@ -13,20 +13,21 @@ class SimplexInput(BaseModel):
     tipo: str = 'max'  # Default 'max' para maximização
 
 # Função Simplex
-def simplex(c, A, b, tipo='max') -> Tuple[np.ndarray, float, List[str]]:
+def simplex(c, A, b, tipo='max') -> Tuple[np.ndarray, float, str, int]:
     logs = []  # Lista para armazenar as mensagens de log
+    iteracao = 0
 
     logs.append('################################')
-    logs.append('  1° Etapa: Contrucao da Tabela')
+    logs.append('  1° Etapa: Construção da Tabela')
     logs.append('################################ \n')
 
-    # Numero de restrições (linhas) e numero de variaveis (colunas)
+    # Número de restrições (linhas) e número de variáveis (colunas)
     num_restricao, num_variaveis = A.shape
 
-    # Criar a tabela inicial com as variaveis de folga
+    # Criar a tabela inicial com as variáveis de folga
     tabela = np.zeros((num_restricao + 1, num_variaveis + num_restricao + 1))
 
-    # Preencher a tabela com as restricoes
+    # Preencher a tabela com as restrições
     tabela[:num_restricao, :num_variaveis] = A
     tabela[:num_restricao, num_variaveis:num_variaveis + num_restricao] = np.eye(num_restricao)
     tabela[:num_restricao, -1] = b
@@ -50,7 +51,7 @@ def simplex(c, A, b, tipo='max') -> Tuple[np.ndarray, float, List[str]]:
             logs.append(f"Critério de Otimalidade (Maximização): Verificando se todos os coeficientes são <= 0")
             return np.all(tabela[-1, :-1] <= 0)
 
-    # Funcao para escolher a variavel de entrada
+    # Função para escolher a variável de entrada
     def get_pivot_column():
         if tipo == 'min':
             coluna = np.argmin(tabela[-1, :-1])
@@ -61,15 +62,17 @@ def simplex(c, A, b, tipo='max') -> Tuple[np.ndarray, float, List[str]]:
             logs.append(f"Coluna Pivô (Maximização): Coluna {coluna + 1} com maior valor na função objetivo")
             return coluna
 
-    # Funcao para escolher a variavel de saida
+    # Função para escolher a variável de saída
     def get_pivot_row(pivot_col):
         ratios = tabela[:-1, -1] / tabela[:-1, pivot_col]
         valid_ratios = np.where(ratios > 0, ratios, np.inf)
         pivot_row = np.argmin(valid_ratios)
+        if all(np.isinf(valid_ratios)):
+            raise Exception("Problema sem fronteira")
         logs.append(f"Razão mínima calculada. Linha pivô: {pivot_row + 1}")
         return pivot_row
 
-    # Funcao de pivotagem
+    # Função de pivotagem
     def pivot(pivot_row, pivot_col):
         logs.append(f"Pivotando na linha {pivot_row + 1}, coluna {pivot_col + 1}")
         tabela[pivot_row, :] /= tabela[pivot_row, pivot_col]
@@ -78,18 +81,32 @@ def simplex(c, A, b, tipo='max') -> Tuple[np.ndarray, float, List[str]]:
                 tabela[i, :] -= tabela[i, pivot_col] * tabela[pivot_row, :]
         logs.append(f"Tabela atualizada após pivotagem:\n{tabela}\n")
 
-    # Loop ate encontrar a solução otima
-    interacao = 1
+    # Loop até encontrar a solução ótima ou detectar problemas
+    iteracao = 1
+    max_iteracoes = 100  # Limite de iterações para evitar loop infinito
     while not is_optimal():
-        logs.append(f'Interação {interacao}:\n')
+        if iteracao > max_iteracoes:
+            logs.append('O processo foi interrompido após 100 iterações devido a possíveis problemas de degeneração ou inviabilidade.')
+            break
+
+        logs.append(f'Iteração {iteracao}:\n')
         pivot_col = get_pivot_column()
         pivot_row = get_pivot_row(pivot_col)
         pivot(pivot_row, pivot_col)
-        interacao += 1
 
-    logs.append('Solução ótima encontrada!\n')
+        # Verificar se há degeneração
+        if all(tabela[:, -1] == tabela[:-1, -1]):
+            logs.append("Problema de degeneração detectado.")
+            break
 
-    # A solucao otima sera encontrada nas colunas das variaveis de folga
+        iteracao += 1
+
+    if iteracao <= max_iteracoes:
+        logs.append('Solução ótima encontrada!\n')
+    else:
+        logs.append('O processo foi interrompido sem encontrar uma solução ótima.\n')
+
+    # A solução ótima será encontrada nas colunas das variáveis de folga
     solution = np.zeros(num_variaveis)
     for i in range(num_restricao):
         basic_var = np.where(np.abs(tabela[i, :num_variaveis]) == 1)[0]
@@ -99,7 +116,10 @@ def simplex(c, A, b, tipo='max') -> Tuple[np.ndarray, float, List[str]]:
     logs.append(f"Solução ótima: {solution}")
     logs.append(f"Valor ótimo: {tabela[-1, -1]}")
 
-    return solution, tabela[-1, -1], logs
+    # Juntar todos os logs em uma única string com quebras de linha
+    log_output = "\n".join(logs)
+
+    return solution, tabela[-1, -1], log_output, iteracao
 
 # Rota para resolver o problema com Simplex
 @app.post("/solve_simplex/")
@@ -108,10 +128,15 @@ def solve_simplex(input_data: SimplexInput):
         c = np.array(input_data.c)
         A = np.array(input_data.A)
         b = np.array(input_data.b)
-        solution, z_opt, logs = simplex(c, A, b, tipo=input_data.tipo)
-        return {"solution": solution.tolist(), "z_opt": z_opt, "logs": logs}
+        solution, z_opt, logs, iteracoes = simplex(c, A, b, tipo=input_data.tipo)
+        return {
+            "solution": solution.tolist(),
+            "z_opt": z_opt,
+            "logs": logs,
+            "iterations": iteracoes
+        }
     except AssertionError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print(f"Erro ao resolver o problema: {str(e)}")
-        raise HTTPException(status_code=500, detail="Erro interno ao resolver o problema.")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
