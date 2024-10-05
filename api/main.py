@@ -21,8 +21,18 @@ def simplex(c, A, b, tipo='max') -> Tuple[np.ndarray, float, str, int]:
     logs.append('  1° Etapa: Construção da Tabela')
     logs.append('################################ \n')
 
-    # Número de restrições (linhas) e número de variáveis (colunas)
+    # Verificar a compatibilidade dos tamanhos
+    A = np.array(A)
+    c = np.array(c)
+    b = np.array(b)
+
     num_restricao, num_variaveis = A.shape
+
+    if len(c) != num_variaveis:
+        raise ValueError(f"O tamanho de 'c' ({len(c)}) não corresponde ao número de variáveis em 'A' ({num_variaveis}).")
+    
+    if len(b) != num_restricao:
+        raise ValueError(f"O tamanho de 'b' ({len(b)}) não corresponde ao número de restrições em 'A' ({num_restricao}).")
 
     # Criar a tabela inicial com as variáveis de folga
     tabela = np.zeros((num_restricao + 1, num_variaveis + num_restricao + 1))
@@ -135,8 +145,8 @@ def solve_simplex(input_data: SimplexInput):
             "logs": logs,
             "iterations": iteracoes
         }
-    except AssertionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         print(f"Erro ao resolver o problema: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
