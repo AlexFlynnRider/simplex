@@ -53,9 +53,16 @@ def simplex(c, A, b):
 @app.post("/solve_simplex/")
 def solve_simplex(input_data: SimplexInput):
     try:
+        # Printar os dados recebidos para depuração
+        print(f"Recebido c: {input_data.c}")
+        print(f"Recebido A: {input_data.A}")
+        print(f"Recebido b: {input_data.b}")
+
         solution, z_opt = simplex(input_data.c, input_data.A, input_data.b)
         return {"solution": solution.tolist(), "z_opt": z_opt}
     except AssertionError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        # Printar erro para depuração
+        print(f"Erro ao resolver o problema: {str(e)}")
         raise HTTPException(status_code=500, detail="Erro interno ao resolver o problema.")
